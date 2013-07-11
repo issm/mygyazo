@@ -1,0 +1,141 @@
+#!/bin/bash
+source $(dirname $0)/_init
+
+SERVER_HOST=$HOST
+SERVER_PORT=5999
+SERVER_WORKERS=8
+SERVER_MAX_REQUESTS=100
+SERVER_PIDFILE=$APP_BASEDIR/var/run/http_server.pid
+SERVER_STATUSFILE=$APP_BASEDIR/var/run/http_server.status
+
+main()
+{
+    MODE=$1
+    APP_LOGFILE=$APP_BASEDIR/var/log/error_log
+    p_log 33 "source $HOME/perl5/perlbrew/etc/bashrc"
+    source $HOME/perl5/perlbrew/etc/bashrc
+    p_log 33 "perlbrew use $APP_PERL"
+    perlbrew use $APP_PERL
+
+    ### env: PLACK_ENV
+    if [ "$PLACK_ENV" = "" ]; then
+        PLACK_ENV=development
+    fi
+
+    ### env: PERL_FNS_NO_OPT
+    if [ $(uname | awk '{print($1)}') = "Darwin" ]; then
+        PERL_FNS_NO_OPT=1
+    else
+        PERL_FNS_NO_OPT=0
+    fi
+
+    p_log 33 "PLACK_ENV:       $PLACK_ENV"
+    p_log 33 "PERL_FNS_NO_OPT: $PERL_FNS_NO_OPT"
+
+    ###
+    case $MODE in
+        "start")
+            _start $*
+            ;;
+        "stop")
+            _stop
+            ;;
+        "restart")
+            _restart
+            ;;
+        * )
+            p 31 "mode \"$MODE\" is not supported."
+            exit 1
+    esac
+    exit 0
+}
+
+_start() {
+    if [ -f $SERVER_PIDFILE ]; then
+        p 31 "http_server has been already started: pid  $(cat $SERVER_PIDFILE)"
+        exit 1
+    fi
+
+    PLACKUP_OPT_R=""
+    if [ "$PLACK_ENV" = "development" ]; then
+        PLACKUP_OPT_R="-R config"
+    fi
+
+    PSGI_FILE=app.psgi
+
+    p 32 "chesking syntax..."
+    p 35 "carton exec -- perl -c $PSGI_FILE"
+    carton exec -- perl -c $PSGI_FILE
+    if [ $? = 0 ]; then
+        p 32 "ok."
+    else
+        p 31 "failed, stop."
+        exit 1
+    fi
+
+    p 32 "starting http_server..."
+
+    env \
+        PERL_FNS_NO_OPT=$PERL_FNS_NO_OPT \
+    carton exec -- \
+    start_server \
+        --interval=3 \
+        --port=$SERVER_PORT \
+        --pid-file=$SERVER_PIDFILE \
+        --status-file=$SERVER_STATUSFILE \
+        -- \
+    plackup \
+        -E $PLACK_ENV \
+        -s Starlet \
+        --host=$SERVER_HOST \
+        --port=$SERVER_PORT \
+        --workers $SERVER_WORKERS \
+        --max-requests $SERVER_MAX_REQUESTS \
+        --access-log $APP_BASEDIR/var/log/access_log \
+        $PLACKUP_OPT_R \
+        $PSGI_FILE \
+        2>> $APP_BASEDIR/var/log/error_log \
+        &
+
+    p 32 "...done."
+}
+
+_stop() {
+    if [ ! -f $SERVER_PIDFILE ]; then
+        p 31 "http_server is not running."
+        exit 1
+    fi
+
+    p 32 "stopping http_server..."
+
+    kill -TERM $(cat $SERVER_PIDFILE)
+
+    if [ -f $SERVER_PIDFILE ]; then
+        rm $SERVER_PIDFILE
+    fi
+
+    if [ -f $SERVER_STATUSFILE ]; then
+        rm $SERVER_STATUSFILE
+    fi
+
+    p 32 "...done."
+}
+
+_restart() {
+    if [ ! -f $SERVER_PIDFILE ]; then
+        p 31 "http_server is not running."
+        exit 1
+    fi
+
+    p 32 "restarting http_server..."
+
+    carton exec -- \
+    start_server \
+        --restart \
+        --pid-file=$SERVER_PIDFILE \
+        --status-file=$SERVER_STATUSFILE
+
+    p 32 "...done."
+}
+
+main $*

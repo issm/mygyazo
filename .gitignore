@@ -1,0 +1,10 @@
+/.carton
+/local/bin/
+/local/lib/
+/local/man/
+/local/cache/authors/00whois.xml
+/local/cache/modules/02packages.details.txt.gz
+/_dummy/
+/var/log/*
+/var/data/*
+/var/run/*
