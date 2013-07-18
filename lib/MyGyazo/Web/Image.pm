@@ -46,7 +46,7 @@ sub call {
 
     return [
         200,
-        [ 'Content-Type' => 'text/plain' ],
+        [ 'Content-Type' => 'image/png' ],
         $fh,
     ];
 }
